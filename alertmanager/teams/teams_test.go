@@ -1,6 +1,7 @@
 package teams
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,11 +18,11 @@ func TestEmptyConfig(t *testing.T) {
 	assert.Nil(c)
 }
 
-func TestTeams(t *testing.T) {
+func TestTelegram(t *testing.T) {
 	assert := assert.New(t)
 
 	configMap := map[string]interface{}{
-		"webhook": "testtest",
+		"webhook": "http://example.com",
 	}
 	c := NewTeams(configMap, &config.App{ClusterName: "dev"})
 	assert.NotNil(c)
@@ -29,31 +30,71 @@ func TestTeams(t *testing.T) {
 	assert.Equal(c.Name(), "Microsoft Teams")
 }
 
-func TestSendMessage(t *testing.T) {
-	assert := assert.New(t)
-
-	s := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte(`{"isOk": true}`))
-		}))
-
-	defer s.Close()
-
+func TestNewTeams(t *testing.T) {
 	configMap := map[string]interface{}{
-		"webhook": s.URL,
+		"webhook": "http://example.com",
+		"title":   "Test Title",
+		"text":    "Test Text",
 	}
-	c := NewTeams(configMap, &config.App{ClusterName: "dev"})
-	assert.NotNil(c)
-
-	assert.Nil(c.SendMessage("test"))
+	appCfg := &config.App{ClusterName: "dev"}
+	teams := NewTeams(configMap, appCfg)
+	assert.NotNil(t, teams)
+	assert.Equal(t, "http://example.com", teams.webhook)
+	assert.Equal(t, "Test Title", teams.title)
+	assert.Equal(t, "Test Text", teams.text)
 }
 
-func TestSendMessageError(t *testing.T) {
+func TestSendEvent(t *testing.T) {
+	configMap := map[string]interface{}{
+		"webhook": "http://example.com",
+	}
+	appCfg := &config.App{ClusterName: "dev"}
+	teams := NewTeams(configMap, appCfg)
+
+	e := &event.Event{
+		PodName:   "test-pod",
+		Namespace: "test-namespace",
+		Reason:    "test-reason",
+		Logs:      "test-logs",
+		Events:    "test-events",
+	}
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+	defer server.Close()
+
+	teams.webhook = server.URL
+	err := teams.SendEvent(e)
+	assert.NoError(t, err)
+}
+
+func TestSendMessage(t *testing.T) {
+	configMap := map[string]interface{}{
+		"webhook": "http://localhost",
+	}
+	appCfg := &config.App{ClusterName: "dev"}
+	teams := NewTeams(configMap, appCfg)
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+	defer server.Close()
+
+	teams.webhook = server.URL
+	err := teams.SendMessage("test message")
+	assert.NoError(t, err)
+}
+
+func TestSendMessageErrorSchemaMismatch(t *testing.T) {
 	assert := assert.New(t)
 
 	s := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusBadGateway)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`TriggerInputSchemaMismatch`))
 		}))
 
 	defer s.Close()
@@ -61,18 +102,19 @@ func TestSendMessageError(t *testing.T) {
 	configMap := map[string]interface{}{
 		"webhook": s.URL,
 	}
-	c := NewTeams(configMap, &config.App{ClusterName: "dev"})
+	appCfg := &config.App{ClusterName: "dev"}
+	c := NewTeams(configMap, appCfg)
 	assert.NotNil(c)
 
 	assert.NotNil(c.SendMessage("test"))
 }
 
-func TestSendEvent(t *testing.T) {
+func TestSendMessageErrorBadRequest(t *testing.T) {
 	assert := assert.New(t)
 
 	s := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte(`{"isOk": true}`))
+			w.WriteHeader(http.StatusBadRequest)
 		}))
 
 	defer s.Close()
@@ -80,37 +122,135 @@ func TestSendEvent(t *testing.T) {
 	configMap := map[string]interface{}{
 		"webhook": s.URL,
 	}
-	c := NewTeams(configMap, &config.App{ClusterName: "dev"})
+	appCfg := &config.App{ClusterName: "dev"}
+	c := NewTeams(configMap, appCfg)
 	assert.NotNil(c)
 
-	ev := event.Event{
-		PodName:       "test-pod",
-		ContainerName: "test-container",
-		Namespace:     "default",
-		Reason:        "OOMKILLED",
-		Logs:          "test\ntestlogs",
-		Events: "event1-event2-event3-event1-event2-event3-event1-event2-" +
-			"event3\nevent5\nevent6-event8-event11-event12",
+	assert.NotNil(c.SendMessage("test"))
+}
+
+func TestSendMessageErrorAccepted(t *testing.T) {
+	assert := assert.New(t)
+
+	s := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusAccepted)
+		}))
+
+	defer s.Close()
+
+	configMap := map[string]interface{}{
+		"webhook": s.URL,
 	}
-	assert.Nil(c.SendEvent(&ev))
+	appCfg := &config.App{ClusterName: "dev"}
+	c := NewTeams(configMap, appCfg)
+	assert.NotNil(c)
+
+	assert.NotNil(c.SendMessage("test"))
+}
+
+func TestSendMessageErrorServer(t *testing.T) {
+	assert := assert.New(t)
+
+	s := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+
+	defer s.Close()
+
+	configMap := map[string]interface{}{
+		"webhook": s.URL,
+	}
+	appCfg := &config.App{ClusterName: "dev"}
+	c := NewTeams(configMap, appCfg)
+	assert.NotNil(c)
+
+	assert.NotNil(c.SendMessage("test"))
+}
+
+func TestSendAPI(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+	defer server.Close()
+
+	configMap := map[string]interface{}{
+		"webhook": server.URL,
+	}
+	appCfg := &config.App{ClusterName: "dev"}
+	teams := NewTeams(configMap, appCfg)
+
+	payload :=
+		[]byte(`{"title":"Test Title","text":"Test Text","attachment":[]}`)
+	err := teams.sendAPI(payload)
+	assert.NoError(t, err)
 }
 
 func TestInvaildHttpRequest(t *testing.T) {
 	assert := assert.New(t)
 
-	configMap := map[string]interface{}{
-		"webhook": "h ttp://localhost",
-	}
-	c := NewTeams(configMap, &config.App{ClusterName: "dev"})
-	assert.NotNil(c)
+	appCfg := &config.App{ClusterName: "dev"}
 
+	configMap := map[string]interface{}{
+		"webhook": "h ttp://localhost/%s",
+	}
+
+	c := NewTeams(configMap, appCfg)
+	assert.NotNil(c)
 	assert.NotNil(c.SendMessage("test"))
 
 	configMap = map[string]interface{}{
 		"webhook": "http://localhost:132323",
 	}
-	c = NewTeams(configMap, &config.App{ClusterName: "dev"})
-	assert.NotNil(c)
 
+	c = NewTeams(configMap, appCfg)
+	assert.NotNil(c)
 	assert.NotNil(c.SendMessage("test"))
+}
+
+func TestBuildRequestBodyTeams(t *testing.T) {
+	configMap := map[string]interface{}{
+		"webhook": "http://example.com",
+		"title":   "Test Title",
+		"text":    "Test Text",
+	}
+	appCfg := &config.App{}
+	teams := NewTeams(configMap, appCfg)
+
+	e := &event.Event{
+		PodName:   "test-pod",
+		Namespace: "test-namespace",
+		Reason:    "test-reason",
+		Logs:      "test-logs",
+		Events:    "test-events",
+	}
+
+	payload := teams.buildRequestBodyTeams(e)
+	var result teamsFlowPayload
+	err := json.Unmarshal(payload, &result)
+	assert.NoError(t, err)
+	assert.Equal(t, "Test Title", result.Title)
+	assert.Contains(t, result.Text, "test-pod")
+	assert.Contains(t, result.Text, "test-namespace")
+	assert.Contains(t, result.Text, "test-reason")
+	assert.Contains(t, result.Text, "test-logs")
+	assert.Contains(t, result.Text, "test-events")
+}
+
+func TestBuildRequestBodyMessage(t *testing.T) {
+	configMap := map[string]interface{}{
+		"webhook": "http://example.com",
+	}
+	appCfg := &config.App{}
+	teams := NewTeams(configMap, appCfg)
+
+	payload := teams.buildRequestBodyMessage("test message")
+	var result teamsFlowPayload
+	err := json.Unmarshal(payload, &result)
+	assert.NoError(t, err)
+	assert.Equal(t, "New Alert", result.Title)
+	assert.Equal(t, "test message", result.Text)
+	assert.Empty(t, result.Attachment)
 }
