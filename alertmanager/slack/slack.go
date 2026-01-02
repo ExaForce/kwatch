@@ -18,32 +18,56 @@ const (
 
 type Slack struct {
 	webhook string
+	token   string
 	title   string
 	text    string
 
-	// used by legacy webhook to send messages to specific channel,
-	// instead of default one
+	// channel is used by legacy webhook to send messages to specific channel,
+	// instead of default one. Required when using token-based authentication.
 	channel string
 
 	// reference for general app configuration
 	appCfg *config.App
 
+	// send is used for webhook-based messaging
 	send func(url string, msg *slackClient.WebhookMessage) error
+
+	// client is used for token-based messaging
+	client *slackClient.Client
 }
 
 // NewSlack returns new Slack instance
 func NewSlack(config map[string]interface{}, appCfg *config.App) *Slack {
-	webhook, ok := config["webhook"].(string)
-	if !ok || len(webhook) == 0 {
+	token, _ := config["token"].(string)
+	webhook, _ := config["webhook"].(string)
+	channel, _ := config["channel"].(string)
+	title, _ := config["title"].(string)
+	text, _ := config["text"].(string)
+
+	// Token takes precedence over webhook
+	if len(token) > 0 {
+		if len(channel) == 0 {
+			logrus.Warnf("initializing slack with token requires channel")
+			return nil
+		}
+		logrus.Infof("initializing slack with token for channel: %s", channel)
+		return &Slack{
+			token:   token,
+			channel: channel,
+			title:   title,
+			text:    text,
+			client:  slackClient.New(token),
+			appCfg:  appCfg,
+		}
+	}
+
+	// Fall back to webhook mode
+	if len(webhook) == 0 {
 		logrus.Warnf("initializing slack with empty webhook url")
 		return nil
 	}
 
 	logrus.Infof("initializing slack with webhook url: %s", webhook)
-
-	channel, _ := config["channel"].(string)
-	title, _ := config["title"].(string)
-	text, _ := config["text"].(string)
 
 	return &Slack{
 		webhook: webhook,
@@ -131,6 +155,20 @@ func (s *Slack) SendMessage(msg string) error {
 }
 
 func (s *Slack) sendAPI(msg *slackClient.WebhookMessage) error {
+	// Use token-based API if client is configured
+	if s.client != nil {
+		options := []slackClient.MsgOption{}
+		if msg.Blocks != nil && len(msg.Blocks.BlockSet) > 0 {
+			options = append(options, slackClient.MsgOptionBlocks(msg.Blocks.BlockSet...))
+		}
+		if len(msg.Text) > 0 {
+			options = append(options, slackClient.MsgOptionText(msg.Text, false))
+		}
+		_, _, err := s.client.PostMessage(s.channel, options...)
+		return err
+	}
+
+	// Fall back to webhook
 	if len(s.channel) > 0 {
 		msg.Channel = s.channel
 	}

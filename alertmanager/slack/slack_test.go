@@ -19,6 +19,46 @@ func TestSlackEmptyConfig(t *testing.T) {
 	assert.Nil(s)
 }
 
+func TestSlackTokenWithoutChannel(t *testing.T) {
+	assert := assert.New(t)
+
+	// Token without channel should fail
+	s := NewSlack(map[string]interface{}{
+		"token": "xoxb-test-token",
+	}, &config.App{ClusterName: "dev"})
+	assert.Nil(s)
+}
+
+func TestSlackTokenWithChannel(t *testing.T) {
+	assert := assert.New(t)
+
+	// Token with channel should succeed
+	s := NewSlack(map[string]interface{}{
+		"token":   "xoxb-test-token",
+		"channel": "#alerts",
+	}, &config.App{ClusterName: "dev"})
+	assert.NotNil(s)
+	assert.Equal("Slack", s.Name())
+	assert.NotNil(s.client)
+	assert.Equal("#alerts", s.channel)
+	assert.Equal("xoxb-test-token", s.token)
+}
+
+func TestSlackTokenPrecedence(t *testing.T) {
+	assert := assert.New(t)
+
+	// Token takes precedence over webhook
+	s := NewSlack(map[string]interface{}{
+		"token":   "xoxb-test-token",
+		"webhook": "https://hooks.slack.com/test",
+		"channel": "#alerts",
+	}, &config.App{ClusterName: "dev"})
+	assert.NotNil(s)
+	assert.NotNil(s.client)
+	assert.Equal("xoxb-test-token", s.token)
+	assert.Empty(s.webhook)
+}
+
 func TestSlack(t *testing.T) {
 	assert := assert.New(t)
 

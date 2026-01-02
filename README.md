@@ -138,12 +138,13 @@ kubectl apply -f https://raw.githubusercontent.com/abahmed/kwatch/v0.10.3/deploy
   <img src="./assets/slack.png" width="30%"/>
 </p>
 
-If you want to enable Slack, provide the webhook with optional text and title
+If you want to enable Slack, provide either a webhook URL or a bot token with channel.
 
 | Parameter                        | Description                                 |
 |:---------------------------------|:------------------------------------------- |
 | `alert.slack.webhook`            | Slack webhook URL                           |
-| `alert.slack.channel`            | Used by legacy webhooks to send messages to specific channel instead of default one |
+| `alert.slack.token`              | Slack Bot token (xoxb-...). If provided, takes precedence over webhook |
+| `alert.slack.channel`            | Required when using token. For webhooks, used by legacy webhooks to send messages to specific channel instead of default one |
 | `alert.slack.title`              | Customized title in slack message           |
 | `alert.slack.text`               | Customized text in slack message            |
 
