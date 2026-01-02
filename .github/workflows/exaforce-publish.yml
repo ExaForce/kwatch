@@ -1,0 +1,70 @@
+name: Build and Push to Exaforce ECR
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "rel/**"
+    paths:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+      - "Dockerfile"
+      - ".github/workflows/exaforce-publish.yml"
+  workflow_dispatch:
+    inputs:
+      push:
+        description: 'Push the image to ECR'
+        required: false
+        default: 'false'
+
+# These permissions are needed to interact with GitHub's OIDC Token endpoint.
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  PUSH: ${{ inputs.push == 'true' || github.event_name != 'pull_request' }}
+
+jobs:
+  build-and-push:
+    runs-on: self-hosted-arm64-dind
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@00943011d9042930efac3dcd3a170e4273319bc8 # v5.1.0
+        with:
+          role-to-assume: arn:aws:iam::157206707803:role/github-actions-ExaForce-operations
+          aws-region: us-east-2
+          mask-aws-account-id: 'false'
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@4625ce35226a7557230889aae2f52eb50ec3dcda # v2.0.1
+        with:
+          mask-password: 'false'
+
+      - name: Build and push
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4
+        with:
+          context: .
+          file: Dockerfile
+          push: ${{ env.PUSH }}
+          tags: 157206707803.dkr.ecr.us-east-2.amazonaws.com/kwatch:exaforce-${{ github.sha }}
+          platforms: linux/arm64
+          build-args: RELEASE_VERSION=${{ github.sha }}
