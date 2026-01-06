@@ -1,6 +1,7 @@
 package slack
 
 import (
+	"os"
 	"testing"
 
 	"github.com/abahmed/kwatch/config"
@@ -139,4 +140,69 @@ func TestSendEvent(t *testing.T) {
 			"event3\nevent5\nevent6-event8-event11-event12",
 	}
 	assert.Nil(s.SendEvent(&ev))
+}
+
+func TestSlackEnvVarToken(t *testing.T) {
+	assert := assert.New(t)
+
+	// Set environment variables
+	os.Setenv("SLACK_TOKEN", "xoxb-env-token")
+	os.Setenv("SLACK_CHANNEL", "#env-channel")
+	defer func() {
+		os.Unsetenv("SLACK_TOKEN")
+		os.Unsetenv("SLACK_CHANNEL")
+	}()
+
+	// Empty config should use env vars
+	s := NewSlack(map[string]interface{}{}, &config.App{ClusterName: "dev"})
+	assert.NotNil(s)
+	assert.Equal("xoxb-env-token", s.token)
+	assert.Equal("#env-channel", s.channel)
+	assert.NotNil(s.client)
+}
+
+func TestSlackEnvVarWebhook(t *testing.T) {
+	assert := assert.New(t)
+
+	// Set environment variable
+	os.Setenv("SLACK_WEBHOOK", "https://hooks.slack.com/env-webhook")
+	defer os.Unsetenv("SLACK_WEBHOOK")
+
+	// Empty config should use env var
+	s := NewSlack(map[string]interface{}{}, &config.App{ClusterName: "dev"})
+	assert.NotNil(s)
+	assert.Equal("https://hooks.slack.com/env-webhook", s.webhook)
+}
+
+func TestSlackConfigOverridesEnvVar(t *testing.T) {
+	assert := assert.New(t)
+
+	// Set environment variables
+	os.Setenv("SLACK_TOKEN", "xoxb-env-token")
+	os.Setenv("SLACK_CHANNEL", "#env-channel")
+	defer func() {
+		os.Unsetenv("SLACK_TOKEN")
+		os.Unsetenv("SLACK_CHANNEL")
+	}()
+
+	// Config values should override env vars
+	s := NewSlack(map[string]interface{}{
+		"token":   "xoxb-config-token",
+		"channel": "#config-channel",
+	}, &config.App{ClusterName: "dev"})
+	assert.NotNil(s)
+	assert.Equal("xoxb-config-token", s.token)
+	assert.Equal("#config-channel", s.channel)
+}
+
+func TestSlackEnvVarTokenWithoutChannel(t *testing.T) {
+	assert := assert.New(t)
+
+	// Set only token env var (no channel)
+	os.Setenv("SLACK_TOKEN", "xoxb-env-token")
+	defer os.Unsetenv("SLACK_TOKEN")
+
+	// Should fail because channel is required with token
+	s := NewSlack(map[string]interface{}{}, &config.App{ClusterName: "dev"})
+	assert.Nil(s)
 }
