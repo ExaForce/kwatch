@@ -2,6 +2,7 @@ package slack
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/abahmed/kwatch/config"
@@ -43,6 +44,17 @@ func NewSlack(config map[string]interface{}, appCfg *config.App) *Slack {
 	channel, _ := config["channel"].(string)
 	title, _ := config["title"].(string)
 	text, _ := config["text"].(string)
+
+	// Fall back to environment variables if config values are not set
+	if len(token) == 0 {
+		token = os.Getenv("SLACK_TOKEN")
+	}
+	if len(channel) == 0 {
+		channel = os.Getenv("SLACK_CHANNEL")
+	}
+	if len(webhook) == 0 {
+		webhook = os.Getenv("SLACK_WEBHOOK")
+	}
 
 	// Token takes precedence over webhook
 	if len(token) > 0 {
