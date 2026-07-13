@@ -147,6 +147,31 @@ If you want to enable Slack, provide either a webhook URL or a bot token with ch
 | `alert.slack.channel`            | Required when using token. For webhooks, used by legacy webhooks to send messages to specific channel instead of default one |
 | `alert.slack.title`              | Customized title in slack message           |
 | `alert.slack.text`               | Customized text in slack message            |
+| `alert.slack.routes`             | Rules to route alerts to extra channels based on pod labels (token mode only) |
+
+With a bot token you can route alerts to different channels based on pod labels.
+Each route lists label regexes (all must match; unanchored, use `^...$` to match
+the full value) and the channels to notify. All matching routes apply. Events
+matching no route, and messages without labels (e.g. PVC alerts), go to the
+default `channel`.
+
+```yaml
+alert:
+  slack:
+    token: xoxb-...
+    channel: "#alerts-default"
+    routes:
+      - labels:
+          app: "^payments-.*"
+          tier: "backend"
+        channels:
+          - "#payments-alerts"
+          - "#backend-oncall"
+      - labels:
+          team: "platform"
+        channels:
+          - "#platform-alerts"
+```
 
 #### Discord
 
