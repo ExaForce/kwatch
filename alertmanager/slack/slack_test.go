@@ -195,6 +195,49 @@ func TestChannelsForEvent(t *testing.T) {
 		s.channelsForEvent(&event.Event{}))
 }
 
+func TestChannelsForEventIncludeDefault(t *testing.T) {
+	assert := assert.New(t)
+
+	s := NewSlack(map[string]interface{}{
+		"token":   "xoxb-test-token",
+		"channel": "#alerts",
+		"routes": []interface{}{
+			map[string]interface{}{
+				"labels":         map[string]interface{}{"team": "edr"},
+				"channels":       []interface{}{"#edr-alerts"},
+				"includeDefault": true,
+			},
+			map[string]interface{}{
+				"labels":   map[string]interface{}{"team": "platform"},
+				"channels": []interface{}{"#platform-alerts"},
+			},
+		},
+	}, &config.App{ClusterName: "dev"})
+	assert.NotNil(s)
+
+	// includeDefault adds the default channel after the route channels
+	assert.Equal(
+		[]string{"#edr-alerts", "#alerts"},
+		s.channelsForEvent(&event.Event{Labels: map[string]string{
+			"team": "edr",
+		}}))
+
+	// without includeDefault only the route channels are used
+	assert.Equal(
+		[]string{"#platform-alerts"},
+		s.channelsForEvent(&event.Event{Labels: map[string]string{
+			"team": "platform",
+		}}))
+
+	// default channel listed explicitly is not duplicated
+	s.routes[0].channels = []string{"#edr-alerts", "#alerts"}
+	assert.Equal(
+		[]string{"#edr-alerts", "#alerts"},
+		s.channelsForEvent(&event.Event{Labels: map[string]string{
+			"team": "edr",
+		}}))
+}
+
 func TestSendEventRouting(t *testing.T) {
 	assert := assert.New(t)
 

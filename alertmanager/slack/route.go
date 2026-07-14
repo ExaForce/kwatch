@@ -11,6 +11,9 @@ import (
 type route struct {
 	labels   map[string]*regexp.Regexp
 	channels []string
+
+	// includeDefault also sends matching events to the default channel
+	includeDefault bool
 }
 
 // matches reports whether every label regex in the route matches the
@@ -27,8 +30,9 @@ func (r *route) matches(labels map[string]string) bool {
 }
 
 type rawRoute struct {
-	Labels   map[string]string `yaml:"labels"`
-	Channels []string          `yaml:"channels"`
+	Labels         map[string]string `yaml:"labels"`
+	Channels       []string          `yaml:"channels"`
+	IncludeDefault bool              `yaml:"includeDefault"`
 }
 
 // parseRoutes converts the untyped routes config into compiled routes
@@ -67,8 +71,9 @@ func parseRoutes(raw interface{}) ([]route, error) {
 		}
 
 		routes = append(routes, route{
-			labels:   labels,
-			channels: rr.Channels,
+			labels:         labels,
+			channels:       rr.Channels,
+			includeDefault: rr.IncludeDefault,
 		})
 	}
 

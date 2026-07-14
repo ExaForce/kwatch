@@ -151,9 +151,10 @@ If you want to enable Slack, provide either a webhook URL or a bot token with ch
 
 With a bot token you can route alerts to different channels based on pod labels.
 Each route lists label regexes (all must match; unanchored, use `^...$` to match
-the full value) and the channels to notify. All matching routes apply. Events
-matching no route, and messages without labels (e.g. PVC alerts), go to the
-default `channel`.
+the full value) and the channels to notify. All matching routes apply. Set
+`includeDefault: true` on a route to also send matching events to the default
+`channel`. Events matching no route, and messages without labels (e.g. PVC
+alerts), go to the default `channel`.
 
 ```yaml
 alert:
@@ -167,6 +168,7 @@ alert:
         channels:
           - "#payments-alerts"
           - "#backend-oncall"
+        includeDefault: true  # also notify #alerts-default
       - labels:
           team: "platform"
         channels:

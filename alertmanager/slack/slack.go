@@ -195,16 +195,21 @@ func (s *Slack) SendMessage(msg string) error {
 func (s *Slack) channelsForEvent(ev *event.Event) []string {
 	var channels []string
 	seen := map[string]struct{}{}
+	add := func(ch string) {
+		if _, ok := seen[ch]; !ok {
+			seen[ch] = struct{}{}
+			channels = append(channels, ch)
+		}
+	}
 	for _, r := range s.routes {
 		if !r.matches(ev.Labels) {
 			continue
 		}
 		for _, ch := range r.channels {
-			if _, ok := seen[ch]; ok {
-				continue
-			}
-			seen[ch] = struct{}{}
-			channels = append(channels, ch)
+			add(ch)
+		}
+		if r.includeDefault {
+			add(s.channel)
 		}
 	}
 	if len(channels) == 0 {
