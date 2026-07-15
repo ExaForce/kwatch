@@ -15,6 +15,14 @@ data:
     alert:
       slack:
         webhook: <webhook_url>
+        # or use a bot token with optional label-based channel routing:
+        # token: <xoxb_bot_token>
+        # channel: "#alerts-default"
+        # routes:
+        #   - labels:
+        #       app: "^payments-.*"
+        #     channels:
+        #       - "#payments-alerts"
       pagerduty:
         integrationKey: <integration_key>
       discord:

@@ -1,6 +1,7 @@
 package slack
 
 import (
+	"errors"
 	"os"
 	"testing"
 
@@ -58,6 +59,280 @@ func TestSlackTokenPrecedence(t *testing.T) {
 	assert.NotNil(s.client)
 	assert.Equal("xoxb-test-token", s.token)
 	assert.Empty(s.webhook)
+}
+
+func TestSlackTokenWithRoutes(t *testing.T) {
+	assert := assert.New(t)
+
+	s := NewSlack(map[string]interface{}{
+		"token":   "xoxb-test-token",
+		"channel": "#alerts",
+		"routes": []interface{}{
+			map[string]interface{}{
+				"labels": map[string]interface{}{
+					"app": "^payments-.*",
+				},
+				"channels": []interface{}{"#payments-alerts"},
+			},
+		},
+	}, &config.App{ClusterName: "dev"})
+	assert.NotNil(s)
+	assert.Len(s.routes, 1)
+	assert.Equal([]string{"#payments-alerts"}, s.routes[0].channels)
+}
+
+func TestSlackRoutesInvalidRegex(t *testing.T) {
+	assert := assert.New(t)
+
+	s := NewSlack(map[string]interface{}{
+		"token":   "xoxb-test-token",
+		"channel": "#alerts",
+		"routes": []interface{}{
+			map[string]interface{}{
+				"labels":   map[string]interface{}{"app": "[invalid"},
+				"channels": []interface{}{"#payments-alerts"},
+			},
+		},
+	}, &config.App{ClusterName: "dev"})
+	assert.Nil(s)
+}
+
+func TestSlackRoutesEmptyLabels(t *testing.T) {
+	assert := assert.New(t)
+
+	s := NewSlack(map[string]interface{}{
+		"token":   "xoxb-test-token",
+		"channel": "#alerts",
+		"routes": []interface{}{
+			map[string]interface{}{
+				"channels": []interface{}{"#payments-alerts"},
+			},
+		},
+	}, &config.App{ClusterName: "dev"})
+	assert.Nil(s)
+}
+
+func TestSlackRoutesEmptyChannels(t *testing.T) {
+	assert := assert.New(t)
+
+	s := NewSlack(map[string]interface{}{
+		"token":   "xoxb-test-token",
+		"channel": "#alerts",
+		"routes": []interface{}{
+			map[string]interface{}{
+				"labels": map[string]interface{}{"app": "payments"},
+			},
+		},
+	}, &config.App{ClusterName: "dev"})
+	assert.Nil(s)
+}
+
+func TestSlackRoutesIgnoredInWebhookMode(t *testing.T) {
+	assert := assert.New(t)
+
+	s := NewSlack(map[string]interface{}{
+		"webhook": "testtest",
+		"routes": []interface{}{
+			map[string]interface{}{
+				"labels":   map[string]interface{}{"app": "payments"},
+				"channels": []interface{}{"#payments-alerts"},
+			},
+		},
+	}, &config.App{ClusterName: "dev"})
+	assert.NotNil(s)
+	assert.Empty(s.routes)
+}
+
+func TestChannelsForEvent(t *testing.T) {
+	assert := assert.New(t)
+
+	s := NewSlack(map[string]interface{}{
+		"token":   "xoxb-test-token",
+		"channel": "#alerts",
+		"routes": []interface{}{
+			map[string]interface{}{
+				"labels": map[string]interface{}{
+					"app":  "^payments-.*",
+					"tier": "backend",
+				},
+				"channels": []interface{}{"#payments-alerts", "#backend-oncall"},
+			},
+			map[string]interface{}{
+				"labels":   map[string]interface{}{"tier": "backend"},
+				"channels": []interface{}{"#backend-oncall", "#backend-all"},
+			},
+		},
+	}, &config.App{ClusterName: "dev"})
+	assert.NotNil(s)
+
+	// all labels must match (AND); both rules match here, channels
+	// are deduplicated in first-seen order
+	assert.Equal(
+		[]string{"#payments-alerts", "#backend-oncall", "#backend-all"},
+		s.channelsForEvent(&event.Event{Labels: map[string]string{
+			"app":  "payments-api",
+			"tier": "backend",
+		}}))
+
+	// only second rule matches when app label doesn't match
+	assert.Equal(
+		[]string{"#backend-oncall", "#backend-all"},
+		s.channelsForEvent(&event.Event{Labels: map[string]string{
+			"app":  "billing-api",
+			"tier": "backend",
+		}}))
+
+	// missing label key means no match; fall back to default channel
+	assert.Equal(
+		[]string{"#alerts"},
+		s.channelsForEvent(&event.Event{Labels: map[string]string{
+			"app": "payments-api",
+		}}))
+
+	// no labels at all falls back to default channel
+	assert.Equal(
+		[]string{"#alerts"},
+		s.channelsForEvent(&event.Event{}))
+}
+
+func TestChannelsForEventIncludeDefault(t *testing.T) {
+	assert := assert.New(t)
+
+	s := NewSlack(map[string]interface{}{
+		"token":   "xoxb-test-token",
+		"channel": "#alerts",
+		"routes": []interface{}{
+			map[string]interface{}{
+				"labels":         map[string]interface{}{"team": "edr"},
+				"channels":       []interface{}{"#edr-alerts"},
+				"includeDefault": true,
+			},
+			map[string]interface{}{
+				"labels":   map[string]interface{}{"team": "platform"},
+				"channels": []interface{}{"#platform-alerts"},
+			},
+		},
+	}, &config.App{ClusterName: "dev"})
+	assert.NotNil(s)
+
+	// includeDefault adds the default channel after the route channels
+	assert.Equal(
+		[]string{"#edr-alerts", "#alerts"},
+		s.channelsForEvent(&event.Event{Labels: map[string]string{
+			"team": "edr",
+		}}))
+
+	// without includeDefault only the route channels are used
+	assert.Equal(
+		[]string{"#platform-alerts"},
+		s.channelsForEvent(&event.Event{Labels: map[string]string{
+			"team": "platform",
+		}}))
+
+	// default channel listed explicitly is not duplicated
+	s.routes[0].channels = []string{"#edr-alerts", "#alerts"}
+	assert.Equal(
+		[]string{"#edr-alerts", "#alerts"},
+		s.channelsForEvent(&event.Event{Labels: map[string]string{
+			"team": "edr",
+		}}))
+}
+
+func TestSendEventRouting(t *testing.T) {
+	assert := assert.New(t)
+
+	s := NewSlack(map[string]interface{}{
+		"token":   "xoxb-test-token",
+		"channel": "#alerts",
+		"routes": []interface{}{
+			map[string]interface{}{
+				"labels":   map[string]interface{}{"team": "platform"},
+				"channels": []interface{}{"#platform-alerts", "#platform-oncall"},
+			},
+		},
+	}, &config.App{ClusterName: "dev"})
+	assert.NotNil(s)
+
+	var posted []string
+	s.postMessage = func(
+		ch string, opts ...slackClient.MsgOption) (string, string, error) {
+		posted = append(posted, ch)
+		return "", "", nil
+	}
+
+	assert.Nil(s.SendEvent(&event.Event{
+		PodName: "test-pod",
+		Labels:  map[string]string{"team": "platform"},
+	}))
+	assert.Equal([]string{"#platform-alerts", "#platform-oncall"}, posted)
+
+	posted = nil
+	assert.Nil(s.SendEvent(&event.Event{
+		PodName: "test-pod",
+		Labels:  map[string]string{"team": "payments"},
+	}))
+	assert.Equal([]string{"#alerts"}, posted)
+}
+
+func TestSendMessageTokenDefaultChannel(t *testing.T) {
+	assert := assert.New(t)
+
+	s := NewSlack(map[string]interface{}{
+		"token":   "xoxb-test-token",
+		"channel": "#alerts",
+		"routes": []interface{}{
+			map[string]interface{}{
+				"labels":   map[string]interface{}{"team": "platform"},
+				"channels": []interface{}{"#platform-alerts"},
+			},
+		},
+	}, &config.App{ClusterName: "dev"})
+	assert.NotNil(s)
+
+	var posted []string
+	s.postMessage = func(
+		ch string, opts ...slackClient.MsgOption) (string, string, error) {
+		posted = append(posted, ch)
+		return "", "", nil
+	}
+
+	assert.Nil(s.SendMessage("test"))
+	assert.Equal([]string{"#alerts"}, posted)
+}
+
+func TestSendEventRoutingPostError(t *testing.T) {
+	assert := assert.New(t)
+
+	s := NewSlack(map[string]interface{}{
+		"token":   "xoxb-test-token",
+		"channel": "#alerts",
+		"routes": []interface{}{
+			map[string]interface{}{
+				"labels":   map[string]interface{}{"team": "platform"},
+				"channels": []interface{}{"#failing", "#working"},
+			},
+		},
+	}, &config.App{ClusterName: "dev"})
+	assert.NotNil(s)
+
+	var posted []string
+	s.postMessage = func(
+		ch string, opts ...slackClient.MsgOption) (string, string, error) {
+		posted = append(posted, ch)
+		if ch == "#failing" {
+			return "", "", errors.New("channel_not_found")
+		}
+		return "", "", nil
+	}
+
+	err := s.SendEvent(&event.Event{
+		PodName: "test-pod",
+		Labels:  map[string]string{"team": "platform"},
+	})
+	assert.Error(err)
+	assert.Contains(err.Error(), "#failing")
+	// failing channel must not block the remaining channels
+	assert.Equal([]string{"#failing", "#working"}, posted)
 }
 
 func TestSlack(t *testing.T) {

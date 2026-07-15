@@ -1,6 +1,7 @@
 package slack
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -35,6 +36,15 @@ type Slack struct {
 
 	// client is used for token-based messaging
 	client *slackClient.Client
+
+	// postMessage posts to a channel using the token-based client
+	postMessage func(
+		channelID string,
+		options ...slackClient.MsgOption) (string, string, error)
+
+	// routes send events to additional channels based on their labels.
+	// Only supported with token-based authentication.
+	routes []route
 }
 
 // NewSlack returns new Slack instance
@@ -62,14 +72,24 @@ func NewSlack(config map[string]interface{}, appCfg *config.App) *Slack {
 			logrus.Warnf("initializing slack with token requires channel")
 			return nil
 		}
+
+		routes, err := parseRoutes(config["routes"])
+		if err != nil {
+			logrus.Errorf("initializing slack failed: %s", err)
+			return nil
+		}
+
 		logrus.Infof("initializing slack with token for channel: %s", channel)
+		client := slackClient.New(token)
 		return &Slack{
-			token:   token,
-			channel: channel,
-			title:   title,
-			text:    text,
-			client:  slackClient.New(token),
-			appCfg:  appCfg,
+			token:       token,
+			channel:     channel,
+			title:       title,
+			text:        text,
+			client:      client,
+			postMessage: client.PostMessage,
+			routes:      routes,
+			appCfg:      appCfg,
 		}
 	}
 
@@ -77,6 +97,10 @@ func NewSlack(config map[string]interface{}, appCfg *config.App) *Slack {
 	if len(webhook) == 0 {
 		logrus.Warnf("initializing slack with empty webhook url")
 		return nil
+	}
+
+	if config["routes"] != nil {
+		logrus.Warnf("slack routes require token mode; ignoring routes")
 	}
 
 	logrus.Infof("initializing slack with webhook url: %s", webhook)
@@ -156,17 +180,46 @@ func (s *Slack) SendEvent(ev *event.Event) error {
 		Blocks: &slackClient.Blocks{
 			BlockSet: append(blocks, markdownSection(constant.Footer)),
 		},
-	})
+	}, s.channelsForEvent(ev))
 }
 
 // SendMessage sends text message to the provider
 func (s *Slack) SendMessage(msg string) error {
 	return s.sendAPI(&slackClient.WebhookMessage{
 		Text: msg,
-	})
+	}, nil)
 }
 
-func (s *Slack) sendAPI(msg *slackClient.WebhookMessage) error {
+// channelsForEvent returns channels of all routes matching event labels,
+// deduplicated in first-seen order, or the default channel if none match
+func (s *Slack) channelsForEvent(ev *event.Event) []string {
+	var channels []string
+	seen := map[string]struct{}{}
+	add := func(ch string) {
+		if _, ok := seen[ch]; !ok {
+			seen[ch] = struct{}{}
+			channels = append(channels, ch)
+		}
+	}
+	for _, r := range s.routes {
+		if !r.matches(ev.Labels) {
+			continue
+		}
+		for _, ch := range r.channels {
+			add(ch)
+		}
+		if r.includeDefault {
+			add(s.channel)
+		}
+	}
+	if len(channels) == 0 {
+		return []string{s.channel}
+	}
+	return channels
+}
+
+func (s *Slack) sendAPI(
+	msg *slackClient.WebhookMessage, channels []string) error {
 	// Use token-based API if client is configured
 	if s.client != nil {
 		options := []slackClient.MsgOption{}
@@ -176,8 +229,17 @@ func (s *Slack) sendAPI(msg *slackClient.WebhookMessage) error {
 		if len(msg.Text) > 0 {
 			options = append(options, slackClient.MsgOptionText(msg.Text, false))
 		}
-		_, _, err := s.client.PostMessage(s.channel, options...)
-		return err
+
+		if len(channels) == 0 {
+			channels = []string{s.channel}
+		}
+		var errs []error
+		for _, ch := range channels {
+			if _, _, err := s.postMessage(ch, options...); err != nil {
+				errs = append(errs, fmt.Errorf("slack channel %q: %w", ch, err))
+			}
+		}
+		return errors.Join(errs...)
 	}
 
 	// Fall back to webhook
