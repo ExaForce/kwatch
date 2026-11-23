@@ -112,6 +112,65 @@ func TestSlackRoutesEmptyLabels(t *testing.T) {
 	assert.Nil(s)
 }
 
+func TestSlackRouteSendAll(t *testing.T) {
+	assert := assert.New(t)
+
+	s := NewSlack(map[string]interface{}{
+		"token":   "xoxb-test-token",
+		"channel": "#alerts",
+		"routes": []interface{}{
+			map[string]interface{}{
+				"labels":         map[string]interface{}{"team": "edr"},
+				"channels":       []interface{}{"#edr-alerts"},
+				"includeDefault": true,
+			},
+			map[string]interface{}{
+				"sendAll":        true,
+				"channels":       []interface{}{"#sre-alerts"},
+				"includeDefault": true,
+			},
+		},
+	}, &config.App{ClusterName: "dev"})
+	assert.NotNil(s)
+
+	assert.Equal(
+		[]string{"#sre-alerts", "#alerts"},
+		s.channelsForEvent(&event.Event{}))
+
+	assert.Equal(
+		[]string{"#edr-alerts", "#alerts", "#sre-alerts"},
+		s.channelsForEvent(&event.Event{Labels: map[string]string{
+			"team": "edr",
+		}}))
+
+	var posted []string
+	s.postMessage = func(
+		ch string, opts ...slackClient.MsgOption) (string, string, error) {
+		posted = append(posted, ch)
+		return "", "", nil
+	}
+
+	assert.Nil(s.SendMessage("test"))
+	assert.Equal([]string{"#sre-alerts", "#alerts"}, posted)
+}
+
+func TestSlackRouteSendAllWithLabels(t *testing.T) {
+	assert := assert.New(t)
+
+	s := NewSlack(map[string]interface{}{
+		"token":   "xoxb-test-token",
+		"channel": "#alerts",
+		"routes": []interface{}{
+			map[string]interface{}{
+				"sendAll":  true,
+				"labels":   map[string]interface{}{"team": "edr"},
+				"channels": []interface{}{"#sre-alerts"},
+			},
+		},
+	}, &config.App{ClusterName: "dev"})
+	assert.Nil(s)
+}
+
 func TestSlackRoutesEmptyChannels(t *testing.T) {
 	assert := assert.New(t)
 
