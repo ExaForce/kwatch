@@ -7,7 +7,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// route sends events matching all label regexes to a set of channels
+// route sends events matching all label regexes to a set of channels; a
+// sendAll route has no labels and gets every event and message
 type route struct {
 	labels   map[string]*regexp.Regexp
 	channels []string
@@ -33,6 +34,7 @@ type rawRoute struct {
 	Labels         map[string]string `yaml:"labels"`
 	Channels       []string          `yaml:"channels"`
 	IncludeDefault bool              `yaml:"includeDefault"`
+	SendAll        bool              `yaml:"sendAll"`
 }
 
 // parseRoutes converts the untyped routes config into compiled routes
@@ -53,7 +55,10 @@ func parseRoutes(raw interface{}) ([]route, error) {
 
 	routes := make([]route, 0, len(rawRoutes))
 	for i, rr := range rawRoutes {
-		if len(rr.Labels) == 0 {
+		if rr.SendAll && len(rr.Labels) > 0 {
+			return nil, fmt.Errorf("route %d sets both sendAll and labels", i)
+		}
+		if !rr.SendAll && len(rr.Labels) == 0 {
 			return nil, fmt.Errorf("route %d has no labels", i)
 		}
 		if len(rr.Channels) == 0 {

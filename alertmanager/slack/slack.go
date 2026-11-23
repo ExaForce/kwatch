@@ -187,7 +187,7 @@ func (s *Slack) SendEvent(ev *event.Event) error {
 func (s *Slack) SendMessage(msg string) error {
 	return s.sendAPI(&slackClient.WebhookMessage{
 		Text: msg,
-	}, nil)
+	}, s.channelsForEvent(&event.Event{}))
 }
 
 // channelsForEvent returns channels of all routes matching event labels,
