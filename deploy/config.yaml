@@ -37,7 +37,8 @@ data:
         host: <host>
         port: <port_number>
       teams:
-          webhook: <webhook_url>
+          # Teams Workflows webhook URL, or set the TEAMS_WEBHOOK env var
+          webhook: <workflows_webhook_url>
       rocketchat:
           webhook: <webhook_url>
       mattermost:

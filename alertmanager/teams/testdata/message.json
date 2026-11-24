@@ -1,0 +1,29 @@
+{
+  "type": "message",
+  "attachments": [
+    {
+      "contentType": "application/vnd.microsoft.card.adaptive",
+      "contentUrl": null,
+      "content": {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.6",
+        "body": [
+          {
+            "type": "TextBlock",
+            "text": "🎉 kwatch@v0.10.3 just started!",
+            "wrap": true
+          },
+          {
+            "type": "TextBlock",
+            "text": "kwatch · cluster prod-eu · Tue, 24 Nov 2026 10:00:00 UTC",
+            "wrap": true,
+            "size": "Small",
+            "isSubtle": true,
+            "spacing": "Medium"
+          }
+        ]
+      }
+    }
+  ]
+}

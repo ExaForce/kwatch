@@ -236,13 +236,39 @@ If you want to enable Telegram, provide a valid token and the chat Id.
   <img src="./assets/teams.png" width="50%"/>
 </p>
 
-If you want to enable Microsoft Teams, provide the channel webhook.
+kwatch posts to a Teams channel through a Teams Workflows webhook. Office 365
+connector webhooks (`*.webhook.office.com`) were retired by Microsoft in May
+2026 and are not supported.
 
-| Parameter                        | Description                                     |
-|:---------------------------------|:------------------------------------------------|
-| `alert.teams.webhook`            |  webhook Microsoft team                         |
-| `alert.teams.title`              | Customized title in Microsoft teams message     |
-| `alert.teams.text`               | Customized title in Microsoft teams message     |
+1. In Teams, open **Workflows**, choose the template **Send webhook alerts to
+   a channel**, pick the team and channel, and save.
+2. Copy the webhook URL the workflow shows. Leave **Who can trigger** set to
+   **Anyone**: kwatch sends no token.
+3. Add a co-owner to the workflow, so it keeps an owner if its creator leaves.
+4. Set the URL as `alert.teams.webhook`, or in the `TEAMS_WEBHOOK` environment
+   variable. The URL works like a password: anyone who has it can post to the
+   channel. Prefer the environment variable, filled from a Kubernetes secret.
+
+| Parameter                   | Description                                                                 |
+|:----------------------------|:----------------------------------------------------------------------------|
+| `alert.teams.webhook`       | Teams Workflows webhook URL; falls back to the `TEAMS_WEBHOOK` environment variable |
+| `alert.teams.title`         | Card title (default: `⛑ kwatch detected a crash in pod`)                    |
+| `alert.teams.text`          | Optional text shown under the title                                         |
+| `alert.teams.includeLogs`   | Show container logs in the card (default: `true`)                           |
+| `alert.teams.includeEvents` | Show pod events in the card (default: `true`)                               |
+| `alert.teams.maxRetries`    | Attempts per message on throttling, server and network errors (default: `3`) |
+| `alert.teams.retryDelay`    | Seconds before the first retry; doubles after each one (default: `5`)       |
+| `alert.teams.timeout`       | Seconds to wait for each request (default: `10`)                            |
+| `alert.teams.rateLimit`     | Messages allowed per `ratePeriod`; more are skipped and counted (default: `20`) |
+| `alert.teams.ratePeriod`    | Rate limit window in seconds (default: `300`)                               |
+
+Teams answers `202 Accepted` as soon as the workflow has the message. If
+posting it fails after that, for example because the bot can't post to the
+channel, only the workflow's run history shows the failure. The template posts
+as the Flow bot, which Microsoft limits to 25 posts per 5 minutes per
+connection; the default rate limit stays below that, and the next card says how
+many alerts were skipped. Cards are trimmed to fit the Teams message size limit
+of about 28 KB, dropping the oldest log lines first.
 
 #### Rocket Chat
 
