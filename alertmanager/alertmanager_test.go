@@ -57,7 +57,7 @@ func TestGetProviders(t *testing.T) {
 			"chatId": "test",
 		},
 		"teams": {
-			"webhook": "test",
+			"webhook": "https://example.com/workflow",
 		},
 		"mattermost": {
 			"webhook": "test",

@@ -32,7 +32,25 @@ env:
   PUSH: ${{ inputs.push == 'true' || github.event_name != 'pull_request' }}
 
 jobs:
+  test:
+    runs-on: aws-self-hosted-arm64-dind
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
   build-and-push:
+    needs: test
     runs-on: aws-self-hosted-arm64-dind
     steps:
       - name: Check out the repo

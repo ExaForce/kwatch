@@ -1,0 +1,82 @@
+{
+  "type": "message",
+  "attachments": [
+    {
+      "contentType": "application/vnd.microsoft.card.adaptive",
+      "contentUrl": null,
+      "content": {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.6",
+        "body": [
+          {
+            "type": "TextBlock",
+            "text": "⛑ kwatch detected a crash in pod",
+            "wrap": true,
+            "weight": "Bolder",
+            "size": "Medium"
+          },
+          {
+            "type": "FactSet",
+            "facts": [
+              {
+                "title": "Cluster",
+                "value": "prod-eu"
+              },
+              {
+                "title": "Namespace",
+                "value": "payments"
+              },
+              {
+                "title": "Pod",
+                "value": "payments-api-7d9f8b6c4-x2x9q"
+              },
+              {
+                "title": "Container",
+                "value": "api"
+              },
+              {
+                "title": "Reason",
+                "value": "CrashLoopBackOff"
+              }
+            ]
+          },
+          {
+            "type": "TextBlock",
+            "text": "Events",
+            "wrap": true,
+            "weight": "Bolder",
+            "spacing": "Medium"
+          },
+          {
+            "type": "TextBlock",
+            "text": "\\[2026-11-24 09:58:01 +0000 UTC\\] BackOff Back-off restarting failed container api in pod payments-api-7d9f8b6c4-x2x9q\n\n\\[2026-11-24 09:59:12 +0000 UTC\\] Unhealthy Liveness probe failed: HTTP probe failed with statuscode: 500",
+            "wrap": true,
+            "fontType": "Monospace"
+          },
+          {
+            "type": "TextBlock",
+            "text": "Logs",
+            "wrap": true,
+            "weight": "Bolder",
+            "spacing": "Medium"
+          },
+          {
+            "type": "TextBlock",
+            "text": "2026-11-24T09:58:00Z INFO starting payments\\_api v1.4.2\n\n2026-11-24T09:58:01Z ERROR missing env DB\\_PASSWORD, see \\[runbook\\](https://example.com/runbook)\n\npanic: runtime error: invalid memory address or nil pointer dereference\n\ngoroutine 1 \\[running\\]:\n\nmain.main()\n\n    /app/main.go:42 +0x1d",
+            "wrap": true,
+            "fontType": "Monospace"
+          },
+          {
+            "type": "TextBlock",
+            "text": "kwatch · Tue, 24 Nov 2026 10:00:00 UTC",
+            "wrap": true,
+            "size": "Small",
+            "isSubtle": true,
+            "spacing": "Medium"
+          }
+        ]
+      }
+    }
+  ]
+}
